@@ -1,0 +1,303 @@
+---
+title: "Statistical Inference Course Project"
+author: "ABC"
+date: "January 17, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(tidyverse)
+library(datasets)
+```
+
+# Part 1: Simulation
+## Overview
+
+In this project I will be examining the exponential probability distribution by generating 40,000 values and examining the distribution characteristics along with the characteristics of the sampling distribution of the mean with sample size of 40. The distribution being examined has a single variable, `lambda` ($\lambda$). The mean and standard deviation of the distribution are $1/\lambda$.
+
+## Simulations 
+
+First, I created a variable called `sample` and loaded it with `rexp(40*1000, 0.2)`, 40,000 random values of the exponential distribution with `lambda = 0.2`. This vector was dimensioned into a 1000 x 40 matrix.  
+
+The `mean()` function was applied across the rows of the matrix, yielding the sampling distribution of the mean, `sample_bar`.  
+```{r echo=FALSE}      
+set.seed(54321)
+sample <- matrix(rexp(40*1000, 0.2), 1000, 40)
+sample_bar <- apply(sample, 1, mean)
+```
+
+## Sample Mean vs Theoretical Mean
+
+```{r echo=FALSE}
+sample_Summ <- summary(c(sample))
+sample_bar_Summ <- summary(c(sample_bar))
+sample_bar_mean <- sample_bar_Summ[[4]]
+```
+Taking the `summary()` of `sample` we see that the mean is `r format(sample_Summ[4], digits=3)`. This is very close to the theoretical value of the mean, $1/\lambda = 5$.  
+
+The mean of `sample_bar` is the same: `r format(sample_bar_Summ[4], digits=3)`. This is expected from the Central Limit Theorem.
+
+## Sample Variance vs Theoretical Variance
+
+```{r echo=FALSE}
+sample_Var <- var(c(sample))
+sample_bar_var <- var(c(sample_bar))
+```
+
+The variance of the exponential distribution can be calculated directly with the `var()` function. The theoretical variance for an exponential distribution is $(1/{\lambda})^2$, or 25 for our generating function. The calculated variance of the 40,000 samples was `r format(sample_Var, digits = 3)`.
+
+Taking the variance of sample_bar yields `r format(sample_bar_var, digits=3)`. For a distribution of means the variance is $\sigma^2/n$, where $\sigma$ is the population standard deviation, and n is the sample size. For our generating function this would yield an expected variance of the sampling distribution of the mean of `r format(5^2/40)`. This is less than the calculated variance, suggesting that the distribution is more variable than a standard normal distribution. This would be improved by increasing n.
+
+## Distribution
+
+To examine the distribution's shape I compared it against three normal random distributions of equal size (n = 1000) and using the calculated standard deviation, `r (sqrt(sample_bar_var))`, $\sqrt{sample\_bar\_var}$, centered around `r format(sample_bar_mean, digits=3)`,`sample_bar_mean`. Figure 1 can be found in the appendix.
+
+This visual comparison suggests that the distribution is very close to a normal distribution. It is possibly slightly skewed, but it is hard to tell if that is due to the large skewedness of the sampled from population (the exponential distribution) or the low number of means.
+
+# Part 2: Basic Inferential Data Analysis
+## Load ToothGrowth and Perform Exploratory Analysis
+
+```{r echo=FALSE, results='hide'}
+library(datasets)
+ToothGrowth$dose <- as.factor(ToothGrowth$dose)
+ToothGrowth <- as_tibble(ToothGrowth)
+```
+The dataset is part of the datasets package. Loading `library(datasets)` will create the `data.frame` `ToothGrowth`. Because the dosage, `dose`, starts as numeric I will convert it to a factor of three levels. I prefer to work in the tidyverse, so I loaded that package and converted `ToothGrowth` to a tibble.
+
+The dataset is fairly straightforward - it is has two experimental variables, `dose` and `supp`, the dosage in mg/day and supplement type, respectively. The length, `len`, is the observed value. First thing to do to look at it would be to plot the lengths in a set of box plots, split by the experimental variables. Figure 2 can be found in the appendix.
+
+This tells us two things - for both treatments the mean growth increases with dosage within the window under examination, and in at least one situation (1 mg/day) there appears to be a statistically significant difference between the means of the different treatments.
+
+## Basic Data Summary
+
+The basic summary of the above can be seen in the summarized mean and standard deviation, when split by dose and supplement type. Here "OJ" refers to Orange Juice and "VC" refers to Vitamin C.
+
+```{r results='asis', echo=FALSE}
+Tooth_summ <- ToothGrowth %>%
+    group_by(dose, supp) %>%
+    summarize("Average Length" = mean(len),
+              "Length Std. Dev." = format(sd(len),digits = 3),
+              "n" = n())
+library(knitr)
+kable(Tooth_summ,
+      caption="Summary of ToothGrowth, grouped by dose and supplement",
+      align = 'clccc',
+      padding = 2)
+```
+
+We can also look at the distributions directly, although it should be kept in mind that n = 10 in each. Figure 3 can be found in the appendix.
+
+## Hypothesis Testing on Experimental Variables
+
+One thing we can test is whether the difference of the means between the supplement type is significant at each dosage level. To do this we can set up the null hypothesis that $H_{0}|\mu_{OJ} = \mu_{VC}$
+This can be performed as a set of two-sample t-tests. The following table shows the p-values.
+
+```{r echo=FALSE, results='asis'}
+Tooth <- data.frame(Dose = c(0, 0, 0), P.value = c(0, 0, 0))
+j = 0
+for(i in c(0.5, 1, 2)) {
+    j = j + 1
+    foo <- t.test(ToothGrowth$len[ToothGrowth$dose == i & ToothGrowth$supp == "OJ"], ToothGrowth$len[ToothGrowth$dose == i & ToothGrowth$supp == "VC"])$p.value
+    Tooth$Dose[j] <- i
+    Tooth$P.value[j] <- round(foo, digits = 4)
+}
+kable(Tooth,
+      padding = 2,
+      caption = "Unpaired Two-sample T-Test Between Supplements at Each Dosage")
+```
+
+The p.values indicate that for dosages 0.5 mg/day and 1.0 mg/day the distributions are such that there is a 99.4% and 99.9% chance, respectively, that the null hypothesis $\mu_{OJ} = \mu_{VC}$ can be rejected. We can not reject the null hypothesis for 2.0 mg/day.
+
+We can also perform the t-test between the dosages to show that there is a dosage-based effect as well.
+
+```{r results='asis', echo=FALSE}
+Tooth2 <- data.frame(Supplement = c("0.5 to 1.0", "1.0 to 2.0"),
+                     OJ.P.value = c(0, 0),
+                     VC.P.value = c(0, 0))
+
+Tooth2[1, 2] <- t.test(ToothGrowth$len[ToothGrowth$dose == 0.5 &
+                                          ToothGrowth$supp == "OJ"],
+                      ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "OJ"])$p.value
+Tooth2[1, 3] <- t.test(ToothGrowth$len[ToothGrowth$dose == 0.5 &
+                                          ToothGrowth$supp == "VC"],
+                      ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "VC"])$p.value
+Tooth2[2, 2] <- t.test(ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "OJ"],
+                      ToothGrowth$len[ToothGrowth$dose == 2 &
+                                          ToothGrowth$supp == "OJ"])$p.value
+Tooth2[2, 3] <- t.test(ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "VC"],
+                      ToothGrowth$len[ToothGrowth$dose == 2 &
+                                          ToothGrowth$supp == "VC"])$p.value
+kable(format(Tooth2, scientific = FALSE, digits = 1),
+      padding = 2,
+      caption = "Unpaired Two-sample T-Test Between Dosages for Each Supplement")
+```
+
+All of the P-values are extremely small. The difference between 1.0 and 2.0 mg/day for OJ is the greatest P-value, although the difference is still significant (p < 0.05).
+
+## Conclusion
+
+The data suggest that the odontoblast length is positively influenced by both orange juice and vitamin C. At concentrations of 0.5 mg/day and 1.0 mg/day orange juice leads to a statistically significant (p < 0.05) increase in length than vitamin C by itself. At 2.0 mg/day there is no significant difference in the average length between the two supplement types. Having a significant separation at 0.5 and 1.0 mg/day, but little separation at 2.0 mg/day suggests that there is a saturation effect with the OJ.  
+
+We can also plot that directly by taking the means of each group. Figure 4 can be found in the appendix.
+
+With this noisy and small of a dataset it is difficult to say with any certainty if the relationship between length and dosage is linear or not, although it does certainly look part of a curve. More data points in each experimental group (to decrease the sd) and more dosage rates (to improve a curve fit) would be required to be able to describe more about the relationship between the variables.
+
+# Appendix
+### Code from Part 1, Simulation 
+```{r eval=FALSE}      
+set.seed(54321)
+sample <- matrix(rexp(40*1000, 0.2), 1000, 40)
+sample_bar <- apply(sample, 1, mean)
+```
+### Code from Part 1, Sample Mean vs Theoretical Mean
+```{r eval=FALSE}
+sample_Summ <- summary(c(sample))
+sample_bar_Summ <- summary(c(sample_bar))
+sample_bar_mean <- sample_bar_Summ[[4]]
+```
+### Code from Part 1, Sample Variance vs Theoretical Variance
+```{r eval=FALSE}
+sample_Var <- var(c(sample))
+sample_bar_var <- var(c(sample_bar))
+```
+### Code and figures from Part 1, Distribution
+```{r dist_vs_norm, fig.dim = c(6,3)}
+set.seed(121212)
+ggplot(data = as.data.frame(sample_bar)) +
+    geom_density(mapping = aes(sample_bar,
+                               fill = 'blue'),
+                               size = 2,
+                               color = 'blue',
+                               alpha = .5) +
+    geom_density(mapping = aes(rnorm(1000,
+                                     sd = sqrt(sample_bar_var),
+                                     mean = sample_bar_mean),
+                               fill = 'red'),
+                               color = 'red',
+                               alpha = .25) +
+    geom_density(mapping = aes(rnorm(1000,
+                                     sd = sqrt(sample_bar_var),
+                                     mean = sample_bar_mean),
+                               fill = 'orange'),
+                               color = 'orange',
+                               alpha = .25) +
+    geom_density(mapping = aes(rnorm(1000,
+                                     sd = sqrt(sample_bar_var),
+                                     mean = sample_bar_mean),
+                               fill = 'gold'),
+                               color = 'gold',
+                               alpha = .25) +
+    labs(x = "",
+         y = "Density",
+         title = "Fig 1. Density plot of the Sampling Distribution of the mean",
+         subtitle = "Plotted with 3 random normal distributions of the same variance, 
+         sample size and mean") +
+    theme(legend.position = c(.9,.8)) +
+    scale_fill_manual(name = 'Identity',
+                       values = c('blue', 'red', 'orange', 'gold'),
+                       labels = c('sample_bar', 'rnorm()', 'rnorm()', 'rnorm()'))
+```
+### Code from Part 2, Load ToothGrowth
+```{r echo=FALSE, eval=FALSE}
+library(datasets)
+ToothGrowth$dose <- as.factor(ToothGrowth$dose)
+ToothGrowth <- as_tibble(ToothGrowth)
+```
+```{r Boxplots, fig.dim = c(6,3)}
+ggplot(data = ToothGrowth) +
+    geom_boxplot(mapping = aes(x = dose, y = len, color = supp)) +
+    labs(x = "Dose (mg/day)",
+         y = "Length",
+         title = "Fig 2. The Effect of Vitamin C on Tooth Growth in Guinea Pigs",
+         subtitle = "Odontoblast Length, by Supplement Type and Dosage") +
+    scale_color_manual(name = 'Supplement Type',
+                       values = c('red', 'blue'),
+                       labels = c('Orange Juice', 'Vitamin C'))
+
+```
+### Code from Part 2, Basic Data Analysis
+```{r results='asis', eval=FALSE}
+Tooth_summ <- ToothGrowth %>%
+    group_by(dose, supp) %>%
+    summarize("Average Length" = mean(len),
+              "Length Std. Dev." = format(sd(len),digits = 3),
+              "n" = n())
+library(knitr)
+kable(Tooth_summ,
+      caption="Summary of ToothGrowth, grouped by dose and supplement",
+      align = 'clccc',
+      padding = 2)
+```
+For `distros` plot
+```{r fig.dim = c(6,3)}
+ggplot(data = ToothGrowth) +
+    geom_density(mapping = aes(x = len)) +
+    facet_grid(dose ~ supp) +
+    labs(
+        title = "Fig 3. Density plots of Length, split by Dose and Supplement Type"
+    )
+```
+### Code from Part 2, Hypothesis Testing on Experimental Variables
+```{r echo=FALSE, eval=FALSE}
+Tooth <- data.frame(Dose = c(0, 0, 0), P.value = c(0, 0, 0))
+j = 0
+for(i in c(0.5, 1, 2)) {
+    j = j + 1
+    foo <- t.test(ToothGrowth$len[ToothGrowth$dose == i & ToothGrowth$supp == "OJ"], ToothGrowth$len[ToothGrowth$dose == i & ToothGrowth$supp == "VC"])$p.value
+    Tooth$Dose[j] <- i
+    Tooth$P.value[j] <- round(foo, digits = 4)
+}
+kable(Tooth,
+      padding = 2,
+      caption = "Unpaired Two-sample T-Test Between Supplements at Each Dosage")
+```
+```{r results='asis', eval=FALSE}
+Tooth2 <- data.frame(Supplement = c("0.5 to 1.0", "1.0 to 2.0"),
+                     OJ.P.value = c(0, 0),
+                     VC.P.value = c(0, 0))
+
+Tooth2[1, 2] <- t.test(ToothGrowth$len[ToothGrowth$dose == 0.5 &
+                                          ToothGrowth$supp == "OJ"],
+                      ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "OJ"])$p.value
+Tooth2[1, 3] <- t.test(ToothGrowth$len[ToothGrowth$dose == 0.5 &
+                                          ToothGrowth$supp == "VC"],
+                      ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "VC"])$p.value
+Tooth2[2, 2] <- t.test(ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "OJ"],
+                      ToothGrowth$len[ToothGrowth$dose == 2 &
+                                          ToothGrowth$supp == "OJ"])$p.value
+Tooth2[2, 3] <- t.test(ToothGrowth$len[ToothGrowth$dose == 1 &
+                                          ToothGrowth$supp == "VC"],
+                      ToothGrowth$len[ToothGrowth$dose == 2 &
+                                          ToothGrowth$supp == "VC"])$p.value
+kable(format(Tooth2, scientific = FALSE, digits = 1),
+      padding = 2,
+      caption = "Unpaired Two-sample T-Test Between Dosages for Each Supplement")
+```
+### Code from Conclusion
+```{r fig.dim = c(6, 3)}
+levels(Tooth_summ$supp) <- c("Orange Juice", "Vitamin C")
+ggplot(data = Tooth_summ,
+       mapping = aes(x = as.numeric(as.character(dose)),
+                     y = `Average Length`,
+                     color = supp)) +
+    geom_point() +
+    geom_errorbar(aes(ymin=`Average Length` - as.numeric(`Length Std. Dev.`),
+                      ymax=`Average Length` + as.numeric(`Length Std. Dev.`)),
+                      width=0.2) +
+    geom_line() +
+    labs(x = "Dose (mg/day)",
+         y = "Average Length",
+         title = "Fig 4. Plot of Average Length by Dosage") +
+    scale_color_manual(name = 'Supplement Type',
+                       values = c('red', 'blue'),
+                       labels = c('Orange Juice', 'Vitamin C'))
+```
